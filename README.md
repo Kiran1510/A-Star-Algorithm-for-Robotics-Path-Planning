@@ -13,7 +13,6 @@ Implementations of A* pathfinding algorithms for robotics applications, featurin
 - [Algorithm Descriptions](#algorithm-descriptions)
 - [Visualizations](#visualizations)
 - [Performance Considerations](#performance-considerations)
-- [Educational Use](#educational-use)
 - [Advanced Topics](#advanced-topics)
 - [Contributing](#contributing)
 - [License](#license)
@@ -43,7 +42,6 @@ f(n) = g(n) + h(n)
 - **Comprehensive Documentation**: Extensively commented code explaining every step
 - **Flexible Configuration**: Adjustable grid resolution, animation speed, and obstacle density
 - **Path Metrics**: Automatic calculation of path length and waypoint count
-- **Educational Focus**: Progressively complex examples for learning
 
 ## Requirements
 
@@ -317,38 +315,6 @@ if len(closed_set) % 100 == 0:
     plt.plot(explored_x, explored_y, "xc", markersize=2)
 ```
 
-## Educational Use
-
-### Recommended Learning Path
-
-1. **Start with A_Star.py**
-   - Understand basic A* concepts
-   - See how heuristic guides search
-   - Learn path reconstruction
-
-2. **Progress to A_Star_Complex.py**
-   - Observe behavior in constrained spaces
-   - See how algorithm handles narrow passages
-   - Compare exploration patterns
-
-3. **Advance to Bidirectional_A_Star.py**
-   - Learn optimization strategies
-   - Understand dual-direction search
-   - Compare performance improvements
-
-### For Students
-
-- Study the extensively commented code
-- Experiment with different maze configurations
-- Modify heuristics and observe changes
-- Analyze search patterns and efficiency
-
-### For Instructors
-
-- Use as lecture demonstrations
-- Assign parameter tuning exercises
-- Compare theoretical vs practical performance
-- Discuss optimization trade-offs
 
 ## Advanced Topics
 
