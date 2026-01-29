@@ -1,9 +1,26 @@
 import math
 import matplotlib
 import matplotlib.pyplot as plt
+import sys
 
 # Flag to enable/disable visualization during pathfinding
 show_animation = True
+
+# Global flag for clean exit
+should_exit = False
+
+
+def on_key_press(event):
+    """
+    Handle keyboard events for clean program termination.
+    Press ESC to exit the program gracefully.
+    """
+    global should_exit
+    if event.key == 'escape':
+        print("\nESC pressed - Exiting program cleanly...")
+        should_exit = True
+        plt.close('all')
+        sys.exit(0)
 
 
 class AStarPlanner:
@@ -96,8 +113,18 @@ class AStarPlanner:
         # Add start node to open set using its grid index as key
         open_set[self.calc_grid_index(start_node)] = start_node
 
+        # For efficient batch plotting - collect explored nodes
+        explored_x = []
+        explored_y = []
+
         # Main A* search loop
         while True:
+            # Check for clean exit request
+            global should_exit
+            if should_exit:
+                print("Search interrupted by user")
+                return [], []
+            
             # Check if search failed (no path exists)
             if len(open_set) == 0:
                 print("Open set is empty..")
@@ -113,20 +140,21 @@ class AStarPlanner:
             # Get the actual node object
             current = open_set[c_id]
 
-            # Visualization: plot current node being explored
+            # Visualization: collect nodes for batch plotting
             if show_animation:  # pragma: no cover
-                # Plot cyan 'x' marker at current node position
-                plt.plot(self.calc_grid_position(current.x, self.min_x),
-                         self.calc_grid_position(current.y, self.min_y), "xc")
+                # Add current node to batch
+                explored_x.append(self.calc_grid_position(current.x, self.min_x))
+                explored_y.append(self.calc_grid_position(current.y, self.min_y))
                 
-                # Allow user to press ESC to exit simulation
-                plt.gcf().canvas.mpl_connect('key_release_event',
-                                             lambda event: [exit(
-                                                 0) if event.key == 'escape' else None])
-                
-                # Update plot every 10 nodes to avoid slowdown
-                if len(closed_set.keys()) % 10 == 0:
-                    plt.pause(0.1)
+                # Update display every 50 nodes for better performance
+                # This dramatically reduces matplotlib rendering overhead
+                if len(closed_set.keys()) % 50 == 0:
+                    # Plot all collected nodes as a single batch
+                    if explored_x:
+                        plt.plot(explored_x, explored_y, "xc", markersize=2)
+                        explored_x = []  # Clear batch for next update
+                        explored_y = []
+                    plt.pause(0.001)  # Brief pause to update display
 
             # Goal check: reached destination?
             if current.x == goal_node.x and current.y == goal_node.y:
@@ -170,6 +198,10 @@ class AStarPlanner:
                     if open_set[n_id].cost > node.cost:
                         # This path is cheaper, update the node
                         open_set[n_id] = node
+
+        # Plot any remaining nodes in the batch
+        if show_animation and explored_x:
+            plt.plot(explored_x, explored_y, "xc", markersize=2)
 
         # Reconstruct path by following parent pointers from goal to start
         rx, ry = self.calc_final_path(goal_node, closed_set)
@@ -424,22 +456,44 @@ def main():
 
     # Setup visualization if animation is enabled
     if show_animation:  # pragma: no cover
+        fig = plt.figure()
+        
+        # Connect keyboard event handler for ESC key
+        fig.canvas.mpl_connect('key_press_event', on_key_press)
+        
         plt.plot(ox, oy, ".k")  # Plot obstacles as black dots
-        plt.plot(sx, sy, "og")  # Plot start as green circle
-        plt.plot(gx, gy, "xb")  # Plot goal as blue X
+        plt.plot(sx, sy, "og", label="Start")  # Plot start as green circle
+        plt.plot(gx, gy, "xb", label="Goal")  # Plot goal as blue X
         plt.grid(True)          # Show grid lines
         plt.axis("equal")       # Equal aspect ratio (square cells)
+        plt.legend()
+        plt.title("A* Path Planning (Press ESC to exit)")
 
     # Create A* planner instance (builds obstacle map)
     a_star = AStarPlanner(ox, oy, grid_size, robot_radius)
     
     # Run A* algorithm to find path from start to goal
+    print("\nStarting A* search... (Press ESC to exit)")
     rx, ry = a_star.planning(sx, sy, gx, gy)
+
+    # Check if path was found
+    if not rx or not ry:
+        print("No path found or search was interrupted!")
+        if show_animation:
+            plt.close('all')
+        return
 
     # Plot the resulting path if animation is enabled
     if show_animation:  # pragma: no cover
-        plt.plot(rx, ry, "-r")  # Plot path as red line
-        plt.pause(0.1)          # Brief pause to render
+        plt.plot(rx, ry, "-r", linewidth=2, label="A* Path")  # Plot path as red line
+        plt.legend()
+        
+        # Calculate and display path distance
+        path_distance = sum([math.hypot(rx[i+1]-rx[i], ry[i+1]-ry[i]) for i in range(len(rx)-1)])
+        print(f"\nPath found! Total distance: {path_distance:.2f} meters")
+        print("Press ESC to close window, or close manually.")
+        
+        plt.pause(0.5)          # Brief pause to render
         plt.show()              # Display final plot
 
 # Standard Python idiom: only run main() if script is executed directly
