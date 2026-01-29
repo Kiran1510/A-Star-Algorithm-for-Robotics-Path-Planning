@@ -1,6 +1,6 @@
 # A* Algorithm for Robotics Path Planning
 
-A comprehensive collection of A* pathfinding implementations for robotics applications, featuring standard A*, bidirectional A*, and extensively annotated educational variants.
+Implementations of A* pathfinding algorithms for robotics applications, featuring standard A* with varying complexity levels and bidirectional A* for enhanced performance.
 
 ## Table of Contents
 
@@ -13,12 +13,14 @@ A comprehensive collection of A* pathfinding implementations for robotics applic
 - [Algorithm Descriptions](#algorithm-descriptions)
 - [Visualizations](#visualizations)
 - [Performance Considerations](#performance-considerations)
+- [Educational Use](#educational-use)
+- [Advanced Topics](#advanced-topics)
 - [Contributing](#contributing)
 - [License](#license)
 
 ## Overview
 
-This repository provides multiple implementations of the A* pathfinding algorithm, specifically tailored for robotics applications. It includes both educational and optimized versions, demonstrating various pathfinding strategies from basic A* to advanced bidirectional search.
+This repository provides three distinct implementations of the A* pathfinding algorithm, designed for robotics path planning applications. Each implementation demonstrates different aspects of the algorithm, from basic concepts to advanced optimization strategies.
 
 ### What is A*?
 
@@ -34,14 +36,14 @@ f(n) = g(n) + h(n)
 
 ## Features
 
-- **Multiple Implementations**: Standard, simple A*, Bidirectional A*, and more a complex variant
-- **Real-time Visualization**: Watch the algorithm explore the search space
-- **Optimized Performance**: Batch rendering for smooth visualization
-- **Interactive Controls**: ESC key for clean exit, adjustable animation speed
-- **Comprehensive Documentation**: Detailed inline comments explaining every step
-- **Obstacle Handling**: Support for both static mazes and random obstacle generation
-- **Path Metrics**: Distance calculations and waypoint counts
-- **Educational Focus**: Extensively annotated code for learning
+- **Three Progressive Implementations**: Simple maze, complex maze, and bidirectional search
+- **Real-time Visualization**: Animated search process showing frontier expansion
+- **Optimized Performance**: Batch rendering for smooth animation without slowdown
+- **Interactive Controls**: ESC key for clean program exit
+- **Comprehensive Documentation**: Extensively commented code explaining every step
+- **Flexible Configuration**: Adjustable grid resolution, animation speed, and obstacle density
+- **Path Metrics**: Automatic calculation of path length and waypoint count
+- **Educational Focus**: Progressively complex examples for learning
 
 ## Requirements
 
@@ -66,301 +68,333 @@ matplotlib>=3.3.0
 
 3. **Run an implementation:**
    ```bash
-   python astar_simple.py
+   python A_Star.py
    # or
-   python bidirectional_astar.py
+   python A_Star_Complex.py
+   # or
+   python Bidirectional_A_Star.py
    ```
 
 ## Repository Structure
 
 ```
 A-Star-Algorithm-for-Robotics-Path-Planning/
-├── astar_simple.py                    # Basic A* with simple maze
-├── astar_complex.py                   # A* with complex maze
-├── astar_rewritten.py                 # Refactored A* with enhanced documentation
-├── bidirectional_astar.py             # Dual-direction search implementation
-├── bidirectional_astar_rewritten.py   # Refactored bidirectional variant
-├── README.md                          # This file
-└── examples/                          # Example outputs and visualizations
+├── A_Star.py                  # Basic A* with simple maze
+├── A_Star_Complex.py          # A* with dense, challenging maze
+├── Bidirectional_A_Star.py    # Dual-direction search implementation
+├── LICENSE                    # MIT License
+└── README.md                  # This file
 ```
 
 ### File Descriptions
 
-#### Standard A* Implementations
+#### `A_Star.py` - Simple Implementation
+- **Purpose**: Introduction to A* pathfinding concepts
+- **Environment**: Simple maze with two interior walls
+- **Grid**: 2.0m cell resolution
+- **Start**: (10, 10)
+- **Goal**: (50, 50)
+- **Best for**: Learning the basics, understanding core algorithm
 
-**`astar_simple.py`**
-- Clean implementation with a basic maze
-- Two interior walls creating a simple navigation challenge
-- Perfect for understanding core A* concepts
-- Start: (10, 10), Goal: (50, 50)
-- Grid resolution: 2.0m cells
+#### `A_Star_Complex.py` - Complex Implementation
+- **Purpose**: Demonstrates robustness in constrained environments
+- **Environment**: Dense maze with 30+ obstacle elements
+- **Grid**: 1.0m cell resolution for precise navigation
+- **Start**: (10, 10)
+- **Goal**: (140, 80)
+- **Features**: Multiple wall segments, scattered pillars, narrow corridors
+- **Best for**: Testing algorithm performance, seeing complex path planning
 
-**`astar_complex.py`**
-- Dense maze with multiple obstacles
-- 30+ distinct obstacle elements
-- Demonstrates algorithm robustness in constrained spaces
-- 10+ major wall segments and scattered pillars
-- Grid resolution: 1.0m cells for precise navigation
-
-**`astar_rewritten.py`**
-- Completely refactored implementation
-- Professional code structure with descriptive naming
-- Enhanced documentation and annotations
-- Same functionality, different perspective
-- Ideal for code review and learning
-
-#### Bidirectional A* Implementations
-
-**`bidirectional_astar.py`**
-- Searches from both start and goal simultaneously
-- ~2x performance improvement in open spaces
-- Random obstacle generation (configurable density)
-- Diagonal corner placement for maximum challenge
-- Detects and visualizes blocked scenarios
-
-**`bidirectional_astar_rewritten.py`**
-- Refactored bidirectional implementation
-- Improved variable naming and structure
-- Comprehensive inline documentation
-- Professional code organization
+#### `Bidirectional_A_Star.py` - Dual-Direction Search
+- **Purpose**: Enhanced performance through simultaneous exploration
+- **Environment**: Random obstacle generation (configurable density)
+- **Grid**: 60x60 with random obstacles
+- **Start**: (1, 1) - bottom-left corner
+- **Goal**: (59, 59) - top-right corner
+- **Optimization**: ~2x faster than standard A* in open spaces
+- **Best for**: Understanding advanced search strategies, performance optimization
 
 ## Usage
 
 ### Basic Usage
 
-Run any implementation directly:
+Simply run any implementation:
 
 ```bash
-python astar_simple.py
+python A_Star.py
 ```
 
-### Customization
+The visualization will open showing:
+- Initial environment with obstacles
+- Real-time search exploration
+- Final path highlighted in red
+
+### Customization Options
 
 #### Adjusting Grid Resolution
 ```python
-grid_size = 2.0  # Cell size in meters (smaller = finer resolution)
+grid_size = 2.0  # Larger = faster but less precise
+grid_size = 1.0  # Smaller = slower but more accurate
 ```
 
 #### Changing Start/Goal Positions
 ```python
-sx = 10.0  # Start X coordinate
-sy = 10.0  # Start Y coordinate
-gx = 50.0  # Goal X coordinate
-gy = 50.0  # Goal Y coordinate
+sx = 10.0  # Start X coordinate [meters]
+sy = 10.0  # Start Y coordinate [meters]
+gx = 50.0  # Goal X coordinate [meters]
+gy = 50.0  # Goal Y coordinate [meters]
 ```
 
-#### Modifying Obstacle Density (Bidirectional)
+#### Modifying Robot Safety Radius
 ```python
-main(obstacle_number=800)  # ~22% density (default)
-main(obstacle_number=1500) # ~40% density (very challenging)
+robot_radius = 1.0  # Obstacle inflation radius [meters]
 ```
 
-#### Animation Speed Control
+#### Animation Speed Control (Bidirectional only)
 ```python
-animation_delay = 0.05  # Seconds between updates
-# 0.2 = Slow, educational
-# 0.05 = Smooth (default)
-# 0.001 = Fast
+animation_delay = 0.05  # Seconds between visualization updates
+# 0.2 = Slow, educational viewing
+# 0.05 = Smooth, balanced (default)
+# 0.01 = Fast execution
+```
+
+#### Obstacle Density (Bidirectional only)
+```python
+main(obstacle_number=800)   # ~22% density (default, good success rate)
+main(obstacle_number=1200)  # ~33% density (challenging)
+main(obstacle_number=1500)  # ~40% density (very difficult)
 ```
 
 ### Interactive Controls
 
-While running:
-- **ESC**: Clean exit and close visualization
-- **Close Window**: Standard window close
+While the program is running:
+- **ESC**: Clean exit and close all windows
+- **Window Close Button**: Standard close
 
 ## Algorithm Descriptions
 
-### Standard A* (`astar_simple.py`, `astar_complex.py`)
+### Standard A* (`A_Star.py`, `A_Star_Complex.py`)
 
-**Algorithm Flow:**
-1. Initialize open set with start node
-2. Select node with minimum f(n) from open set
-3. If goal reached, reconstruct path
-4. Expand neighbors, update costs
-5. Move current to closed set
+**Algorithm Steps:**
+1. Initialize open set with start node (f = g + h)
+2. Select node with minimum f-value from open set
+3. If selected node is goal, reconstruct path and exit
+4. For each neighbor of selected node:
+   - Calculate tentative g-value
+   - If neighbor not in open set, add it
+   - If neighbor in open set but new path is cheaper, update it
+5. Move selected node to closed set
 6. Repeat from step 2
 
-**Heuristic:** Euclidean distance (straight-line distance to goal)
+**Heuristic Function:** Euclidean distance
+```python
+h(n) = √((x₂-x₁)² + (y₂-y₁)²)
+```
+- Admissible (never overestimates)
+- Optimal for 8-connected grid movement
 
 **Movement Model:** 8-connected grid (like chess king)
 - Cardinal moves (↑↓←→): cost = 1.0
 - Diagonal moves (↗↘↖↙): cost = √2 ≈ 1.414
 
-**Optimizations:**
-- Batch rendering (update every 50-100 nodes)
-- Dictionary-based open/closed sets for O(1) lookup
-- Obstacle inflation for robot safety radius
+**Key Optimizations:**
+- Batch rendering: Updates display every 50 nodes instead of every node
+- Dictionary-based sets: O(1) lookup for open/closed membership
+- Obstacle inflation: Single collision check per node
 
-### Bidirectional A* (`bidirectional_astar.py`)
+### Bidirectional A* (`Bidirectional_A_Star.py`)
 
-**Algorithm Flow:**
-1. Initialize searches from both start and goal
-2. Expand forward search toward goal's best node
-3. Expand backward search toward start's best node
-4. Check if searches have met
-5. If met, reconstruct path from both directions
+**Algorithm Steps:**
+1. Initialize two searches: forward (from start) and backward (from goal)
+2. Expand forward search toward backward search's best node
+3. Expand backward search toward forward search's best node
+4. Check if searches have met (any node in both closed sets)
+5. If met, reconstruct complete path by joining both segments
 6. Repeat from step 2
 
-**Advantages:**
-- ~2x faster in open environments
+**Heuristic Function:** Manhattan distance
+```python
+h(n) = |x₂-x₁| + |y₂-y₁|
+```
+- Faster computation than Euclidean
+- Still admissible for grid-based search
+
+**Performance Advantage:**
 - Each search explores roughly half the space
-- Better for symmetric scenarios
+- Meeting point typically near the midpoint
+- ~2x speedup in open or symmetric environments
 
-**Heuristic:** Manhattan distance (|Δx| + |Δy|)
-
-**Meeting Condition:** When any node appears in both closed sets
-
-**Performance:** Updates visualization every 5 iterations for smooth animation
+**Visualization:** Updates every 5 iterations for smooth animation
 
 ## Visualizations
 
-### Color Scheme
+### Legend
 
-**Standard A***
-- 🟢 **Green Circle**: Start position
-- 🔵 **Blue X**: Goal position
-- 🟦 **Cyan X's**: Explored nodes (search frontier)
-- ⬛ **Black Dots**: Obstacles
-- 🔴 **Red Line**: Final optimal path
+**Standard A* (A_Star.py, A_Star_Complex.py)**
 
-**Bidirectional A***
-- 🔺 **Blue Triangle**: Start position
-- ⭐ **Blue Star**: Goal position
-- 🟡 **Yellow Circles**: Forward search exploration (start→goal)
-- 🟢 **Green Circles**: Backward search exploration (goal→start)
-- ⬛ **Black Squares**: Obstacles
-- 🔴 **Red Line**: Complete path
-- ❌ **Red X's**: Blocking boundary (if no path exists)
+- 🟢 Green Circle: Start position
+- 🔵 Blue X: Goal position  
+- 🟦 Cyan X: Explored nodes (search frontier)
+- ⬛ Black Dot: Obstacle
+- 🔴 Red Line: Final optimal path
 
-### Example Outputs
+**Bidirectional A* (Bidirectional_A_Star.py)**
 
-**Simple Maze:**
+- 🔺 Blue Triangle: Start position
+- ⭐ Blue Star: Goal position
+- 🟡 Yellow Circle: Forward search exploration (start→goal)
+- 🟢 Green Circle: Backward search exploration (goal→start)
+- ⬛ Black Square: Obstacle
+- 🔴 Red Line: Complete path
+- ❌ Red X: Blocking boundary (when no path exists)
+
+### Example Results
+
+**Simple Maze (A_Star.py):**
 ```
-Start: (10, 10) → Goal: (50, 50)
-Path length: ~67.5 meters
+Path found! Total distance: 67.48 meters
 Waypoints: 35
+Exploration pattern: Focused beam toward goal
 ```
 
-**Complex Maze:**
+**Complex Maze (A_Star_Complex.py):**
 ```
-Start: (10, 10) → Goal: (140, 80)
-Path length: ~165.8 meters
+Path found! Total distance: 165.82 meters
 Waypoints: 112
-Multiple corridor navigation required
+Exploration pattern: Dense exploration through narrow corridors
 ```
 
-**Bidirectional (Diagonal):**
+**Bidirectional (Bidirectional_A_Star.py):**
 ```
-Start: (1, 1) → Goal: (59, 59)
-Direct distance: ~82 units
-Meeting point: ~(30, 30)
-Path length varies with obstacle distribution
+Start: [1, 1] → Goal: [59, 59]
+Diagonal distance: ~82.0 units
+Meeting point: ~[30, 30] (approximate midpoint)
+Path length: Varies with random obstacle distribution
 ```
 
 ## Performance Considerations
 
 ### Computational Complexity
 
-**Time Complexity:** O(b^d) where:
+**Time Complexity:** O(b^d)
 - b = branching factor (8 for 8-connected grid)
 - d = depth of optimal solution
 
-**Space Complexity:** O(b^d) for storing open and closed sets
+**Space Complexity:** O(b^d)
+- Storage for open and closed sets
 
-### Optimization Techniques
+### Optimization Techniques Used
 
 1. **Batch Rendering**
-   - Plot nodes in groups rather than individually
-   - Reduces matplotlib overhead by ~100x
-   - Default: update every 50 nodes
+   - Standard A*: Updates every 50 nodes
+   - Bidirectional A*: Updates every 5 iterations
+   - Result: ~100x reduction in rendering overhead
 
 2. **Dictionary-Based Sets**
-   - O(1) lookup for open/closed membership
-   - Faster than list-based searches
+   - O(1) lookup time for node membership
+   - Much faster than list-based searching
 
 3. **Grid Resolution Trade-offs**
-   - Finer grid (1.0m): More accurate, slower
-   - Coarser grid (2.0m): Faster, less precise
-
-4. **Heuristic Selection**
-   - Euclidean: More accurate for 8-connected movement
-   - Manhattan: Faster computation, admissible for grid-based search
+   - Coarse (2.0m): Faster, suitable for initial planning
+   - Fine (1.0m): Slower but more accurate paths
 
 ### Performance Tips
 
-**For Large Environments:**
+**For faster execution:**
 ```python
-# Reduce visualization frequency
-if len(closed_set) % 100 == 0:  # Update every 100 nodes instead of 50
+ENABLE_VISUALIZATION = False  # Disable animation
+```
+
+**For educational viewing:**
+```python
+animation_delay = 0.2  # Slow down to watch behavior
+```
+
+**For large environments:**
+```python
+# Update visualization less frequently
+if len(closed_set) % 100 == 0:
     plt.plot(explored_x, explored_y, "xc", markersize=2)
 ```
 
-**For Real-Time Applications:**
-```python
-show_animation = False  # Disable visualization for maximum speed
-```
+## Educational Use
 
-**For Educational Purposes:**
-```python
-animation_delay = 0.2  # Slow down to watch algorithm behavior
-```
+### Recommended Learning Path
 
+1. **Start with A_Star.py**
+   - Understand basic A* concepts
+   - See how heuristic guides search
+   - Learn path reconstruction
 
-### Learning Path
+2. **Progress to A_Star_Complex.py**
+   - Observe behavior in constrained spaces
+   - See how algorithm handles narrow passages
+   - Compare exploration patterns
 
-1. Start with `astar_simple.py` - understand basic concepts
-2. Study `astar_complex.py` - see robustness in constrained spaces
-3. Explore `bidirectional_astar.py` - learn optimization strategies
-4. Review rewritten versions - see professional code organization
+3. **Advance to Bidirectional_A_Star.py**
+   - Learn optimization strategies
+   - Understand dual-direction search
+   - Compare performance improvements
+
+### For Students
+
+- Study the extensively commented code
+- Experiment with different maze configurations
+- Modify heuristics and observe changes
+- Analyze search patterns and efficiency
+
+### For Instructors
+
+- Use as lecture demonstrations
+- Assign parameter tuning exercises
+- Compare theoretical vs practical performance
+- Discuss optimization trade-offs
 
 ## Advanced Topics
 
-### Variations to Explore
+### Possible Extensions
 
-1. **Weighted A*** (ε-A*)
+1. **Weighted A* (ε-A*)**
    ```python
-   w = 1.5  # Weight > 1.0
-   d = w * math.hypot(n1.x - n2.x, n1.y - n2.y)
+   heuristic_weight = 1.5  # > 1.0 for faster but suboptimal paths
+   h = heuristic_weight * euclidean_distance(current, goal)
    ```
-   - Faster but suboptimal
-   - Guarantees solution within (1+ε) of optimal
 
 2. **Jump Point Search (JPS)**
-   - 10-40x faster for uniform grids
-   - Skips intermediate nodes in straight paths
+   - Skip intermediate nodes on straight paths
+   - 10-40x speedup for uniform grids
 
 3. **Theta***
-   - Any-angle paths (not restricted to grid edges)
-   - Smoother, more natural paths
+   - Any-angle paths (not restricted to grid)
+   - Smoother, more natural trajectories
 
-4. **Dynamic Obstacles**
-   - Integrate D* or D* Lite for replanning
+4. **Dynamic Replanning**
+   - Integrate D* or D* Lite
    - Handle moving obstacles
 
 ### Real-World Applications
 
-- **Mobile Robotics**: Warehouse navigation, delivery robots
-- **Autonomous Vehicles**: Urban path planning
-- **Drones**: 3D pathfinding (extend to 3D grid)
-- **Video Games**: NPC movement, strategy games
-- **Mars Rovers**: Used Field D* based on A*
+- **Mobile Robotics**: Warehouse navigation, autonomous delivery
+- **Autonomous Vehicles**: Urban path planning with traffic
+- **Drones**: Extend to 3D for aerial navigation
+- **Mars Rovers**: NASA uses Field D* (based on A*)
+- **Video Games**: NPC pathfinding, RTS unit movement
 
 ## Contributing
 
-Contributions are welcome! Areas for improvement:
+Contributions are welcome! Potential improvements:
 
-- Additional heuristic functions
+- Additional heuristic functions (Chebyshev, Octile)
 - 3D pathfinding extension
 - Dynamic obstacle handling
+- Path smoothing post-processing
+- Integration with ROS
 - Performance benchmarking suite
 - Additional maze configurations
-- Path smoothing post-processing
-- Integration with ROS (Robot Operating System)
 
 ## License
 
-This project is open source and available under the MIT License.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Author
 
@@ -370,23 +404,23 @@ This project is open source and available under the MIT License.
 
 ## Acknowledgments
 
-- Original A* algorithm by Peter Hart, Nils Nilsson, and Bertram Raphael (1968)
-- Bidirectional search concepts from Russell & Norvig's "Artificial Intelligence: A Modern Approach"
-- Visualization techniques inspired by PythonRobotics repository
+- Original A* algorithm: Hart, Nilsson & Raphael (1968)
+- Bidirectional search: Russell & Norvig, "AI: A Modern Approach"
+- Visualization inspired by PythonRobotics repository
 
 ## References
 
 1. Hart, P. E., Nilsson, N. J., & Raphael, B. (1968). "A Formal Basis for the Heuristic Determination of Minimum Cost Paths"
 2. Russell, S., & Norvig, P. "Artificial Intelligence: A Modern Approach" (4th Edition)
 3. LaValle, S. M. "Planning Algorithms" - Cambridge University Press
-4. Koenig, S., & Likhachev, M. "D* Lite" - AAAI Conference on Artificial Intelligence
+4. Koenig, S., & Likhachev, M. "D* Lite" - AAAI 2002
 
 ## Known Issues
 
-- Very high obstacle density (>40%) may result in no path
-- Large grids (>200x200) may have slow visualization
-- matplotlib window must be closed manually on some systems
+- Very high obstacle density (>40%) may result in no path found
+- Large grids (>200x200) may slow visualization
+- Matplotlib window requires manual close on some systems
 
-
+---
 
 *Last Updated: January 2026*
