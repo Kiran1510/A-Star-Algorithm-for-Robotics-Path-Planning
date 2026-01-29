@@ -637,7 +637,7 @@ def main():
         plt.legend()
         
         # Brief pause to ensure rendering completes
-        plt.pause(0.1)
+        plt.pause(0.001)
         
         # Display the final plot (blocks until window is closed)
         plt.show()
