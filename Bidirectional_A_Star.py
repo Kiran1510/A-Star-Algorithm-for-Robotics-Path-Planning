@@ -1,16 +1,15 @@
 """
-Bidirectional A* Algorithm
-Author: Weicent
+Dual-Direction A* Pathfinding Algorithm
+Performs simultaneous exploration from both start and goal positions.
 
-This implementation searches for a path by exploring from both the start 
-and goal simultaneously, meeting in the middle. This can be roughly 2x 
-faster than standard A* in open environments.
+Strategy:
+- Launch two independent A* searches
+- One expands from start position
+- Other expands from goal position  
+- Path found when searches meet
+- Approximately 2x faster than single-direction A*
 
-Features:
-- Random obstacle generation for testing
-- Dual-direction search (start→goal and goal→start)
-- Detects when start or goal is completely blocked
-- Visual animation of search process
+Author: Rewritten implementation with enhanced annotations
 """
 
 import numpy as np
@@ -18,758 +17,767 @@ import matplotlib.pyplot as plt
 import math
 import sys
 
-# Flag to enable/disable real-time visualization of the search process
-show_animation = True
-
-# Animation speed control (seconds between updates)
-# Increase for slower, more visible animation
-# Decrease for faster execution
-animation_delay = 0.2  # 50ms delay = ~20 updates per second
-
-# Global flag for clean exit
-should_exit = False
+# ========== GLOBAL CONFIGURATION ==========
+SHOW_SEARCH_ANIMATION = True  # Enable real-time visualization
+FRAME_DELAY = 0.2  # Seconds between animation updates (higher = slower)
+CONTINUE_EXECUTION = True  # Program state flag
 
 
-def on_key_press(event):
+def handle_escape_key(key_event):
     """
-    Handle keyboard events for clean program termination.
-    Press ESC to exit the program gracefully.
+    Interrupt handler for ESC key press.
+    Provides clean termination of search and visualization.
+    
+    Args:
+        key_event: Matplotlib keyboard event object
     """
-    global should_exit
-    if event.key == 'escape':
-        print("\nESC pressed - Exiting program cleanly...")
-        should_exit = True
+    global CONTINUE_EXECUTION
+    if key_event.key == 'escape':
+        print("\n[ABORT] ESC detected - Shutting down gracefully...")
+        CONTINUE_EXECUTION = False
         plt.close('all')
         sys.exit(0)
 
 
-class Node:
+class SearchPoint:
     """
-    Node represents a single cell/position in the search grid.
+    Represents a single location in the bidirectional search space.
+    
+    Attributes:
+        actual_cost: Distance traveled from origin (g-value)
+        estimated_cost: Predicted distance to target (h-value)
+        total_score: Sum of actual + estimated (f-value)
+        position: [x, y] coordinates in grid
+        predecessor: Reference to previous point in path
+    """
+    
+    def __init__(self, actual_cost=0, estimated_cost=0, position=None, predecessor=None):
+        self.actual_cost = actual_cost  # g(n) - cost from start
+        self.estimated_cost = estimated_cost  # h(n) - heuristic to goal
+        self.total_score = actual_cost + estimated_cost  # f(n) = g(n) + h(n)
+        self.predecessor = predecessor  # Parent for path reconstruction
+        self.position = position  # [x, y] location
+    
+    def recalculate_score(self):
+        """
+        Update total score after cost values change.
+        Called when a shorter path to this point is discovered.
+        """
+        self.total_score = self.actual_cost + self.estimated_cost
+
+
+def manhattan_distance(current_position, target_position):
+    """
+    Compute Manhattan distance heuristic (L1 norm).
+    
+    Formula: |Δx| + |Δy|
     
     Properties:
-    - G: Cost from start to this node (g(n) in A*)
-    - H: Heuristic estimated cost from this node to goal (h(n) in A*)
-    - F: Total cost (F = G + H, the evaluation function f(n) in A*)
-    - coordinate: [x, y] position in the grid
-    - parent: Reference to the parent node (for path reconstruction)
-    """
-
-    def __init__(self, G=0, H=0, coordinate=None, parent=None):
-        self.G = G  # Actual cost from start to this node
-        self.H = H  # Heuristic estimated cost to goal
-        self.F = G + H  # Total estimated cost f(n) = g(n) + h(n)
-        self.parent = parent  # Parent node for backtracking the path
-        self.coordinate = coordinate  # [x, y] position
-
-    def reset_f(self):
-        """
-        Recalculate F value after G or H is updated.
-        Called when a cheaper path to this node is found.
-        """
-        self.F = self.G + self.H
-
-
-def hcost(node_coordinate, goal):
-    """
-    Calculate heuristic cost h(n) from node to goal.
-    
-    Uses Manhattan distance (L1 norm): |dx| + |dy|
-    This is admissible for grid-based 8-connected movement.
+    - Admissible for grid-based movement
+    - Never overestimates actual path length
+    - Works well with 8-connected neighbors
     
     Args:
-        node_coordinate: [x, y] position of current node
-        goal: [x, y] position of goal
+        current_position: [x, y] coordinates of current point
+        target_position: [x, y] coordinates of target point
     
     Returns:
-        Manhattan distance between node and goal
+        Manhattan distance as heuristic value
     """
-    dx = abs(node_coordinate[0] - goal[0])
-    dy = abs(node_coordinate[1] - goal[1])
-    hcost = dx + dy
-    return hcost
+    delta_x = abs(current_position[0] - target_position[0])
+    delta_y = abs(current_position[1] - target_position[1])
+    return delta_x + delta_y
 
 
-def gcost(fixed_node, update_node_coordinate):
+def calculate_movement_cost(parent_point, child_position):
     """
-    Calculate actual cost g(n) to reach update_node from start.
+    Determine cost to move from parent to child position.
+    
+    Uses Euclidean distance for accurate cost calculation:
+    - Horizontal/vertical moves: cost ≈ 1.0
+    - Diagonal moves: cost ≈ 1.414 (√2)
     
     Args:
-        fixed_node: The parent node (already in closed list)
-        update_node_coordinate: [x, y] coordinate of the node to update
+        parent_point: SearchPoint object representing parent
+        child_position: [x, y] coordinates of child
     
     Returns:
-        Total cost from start to update_node via fixed_node
-        
-    Note: Uses Euclidean distance for movement cost between adjacent cells
-          (1.0 for cardinal, ~1.414 for diagonal moves)
+        Total cost from search origin to child via parent
     """
-    # Distance from fixed_node to update_node
-    dx = abs(fixed_node.coordinate[0] - update_node_coordinate[0])
-    dy = abs(fixed_node.coordinate[1] - update_node_coordinate[1])
-    gc = math.hypot(dx, dy)  # Euclidean distance: sqrt(dx^2 + dy^2)
+    # Calculate distance between parent and child
+    delta_x = abs(parent_point.position[0] - child_position[0])
+    delta_y = abs(parent_point.position[1] - child_position[1])
+    step_cost = math.hypot(delta_x, delta_y)
     
-    # Total cost = cost to reach fixed_node + cost from fixed_node to update_node
-    gcost = fixed_node.G + gc
-    return gcost
+    # Total cost = cost to reach parent + cost from parent to child
+    return parent_point.actual_cost + step_cost
 
 
-def boundary_and_obstacles(start, goal, top_vertex, bottom_vertex, obs_number):
+def create_environment(start_pos, goal_pos, upper_corner, lower_corner, obstacle_count):
     """
-    Generate the environment: rectangular boundary walls and random obstacles.
+    Generate search environment with boundaries and random obstacles.
+    
+    Creates:
+    1. Four boundary walls forming rectangular perimeter
+    2. Random interior obstacles for complexity
+    3. Ensures start and goal remain unobstructed
     
     Args:
-        start: [x, y] starting position
-        goal: [x, y] goal position
-        top_vertex: [x, y] top-right corner of boundary
-        bottom_vertex: [x, y] bottom-left corner of boundary
-        obs_number: Number of random obstacles to generate
+        start_pos: [x, y] starting location
+        goal_pos: [x, y] goal location
+        upper_corner: [x, y] top-right boundary corner
+        lower_corner: [x, y] bottom-left boundary corner
+        obstacle_count: Number of random obstacles to generate
     
     Returns:
-        bound_obs: numpy array of all obstacles (boundary + random obstacles)
-        obstacle: list of random obstacle coordinates (excluding start/goal)
+        complete_obstacles: Combined boundary + random obstacles
+        interior_obstacles: List of random obstacles only
     """
     
-    # ===== CONSTRUCT BOUNDARY WALLS =====
-    # Create four walls forming a rectangle
+    # ===== BUILD PERIMETER WALLS =====
     
-    # Left wall: vertical line at x = bottom_vertex[0]
-    ay = list(range(bottom_vertex[1], top_vertex[1]))
-    ax = [bottom_vertex[0]] * len(ay)
+    # Left vertical wall
+    left_y = list(range(lower_corner[1], upper_corner[1]))
+    left_x = [lower_corner[0]] * len(left_y)
     
-    # Right wall: vertical line at x = top_vertex[0]
-    cy = ay  # Same y-coordinates as left wall
-    cx = [top_vertex[0]] * len(cy)
+    # Right vertical wall
+    right_y = left_y  # Mirror left wall's y-coordinates
+    right_x = [upper_corner[0]] * len(right_y)
     
-    # Bottom wall: horizontal line at y = bottom_vertex[1]
-    bx = list(range(bottom_vertex[0] + 1, top_vertex[0]))
-    by = [bottom_vertex[1]] * len(bx)
+    # Bottom horizontal wall
+    bottom_x = list(range(lower_corner[0] + 1, upper_corner[0]))
+    bottom_y = [lower_corner[1]] * len(bottom_x)
     
-    # Top wall: horizontal line at y = top_vertex[1]
-    dx = [bottom_vertex[0]] + bx + [top_vertex[0]]
-    dy = [top_vertex[1]] * len(dx)
+    # Top horizontal wall
+    top_x = [lower_corner[0]] + bottom_x + [upper_corner[0]]
+    top_y = [upper_corner[1]] * len(top_x)
+    
+    # ===== GENERATE RANDOM INTERIOR OBSTACLES =====
+    random_x = np.random.randint(lower_corner[0] + 1, 
+                                 upper_corner[0], 
+                                 obstacle_count).tolist()
+    random_y = np.random.randint(lower_corner[1] + 1, 
+                                 upper_corner[1], 
+                                 obstacle_count).tolist()
+    
+    # ===== COMBINE ALL WALL SEGMENTS =====
+    all_x = left_x + bottom_x + right_x + top_x
+    all_y = left_y + bottom_y + right_y + top_y
+    
+    # ===== PROCESS OBSTACLE LIST =====
+    interior_obstacles = np.vstack((random_x, random_y)).T.tolist()
+    
+    # Remove any obstacles that block start or goal
+    interior_obstacles = [obs for obs in interior_obstacles 
+                         if obs != start_pos and obs != goal_pos]
+    
+    # ===== COMBINE BOUNDARIES AND OBSTACLES =====
+    boundary_array = np.vstack((all_x, all_y)).T
+    obstacle_array = np.array(interior_obstacles)
+    complete_obstacles = np.vstack((boundary_array, obstacle_array))
+    
+    return complete_obstacles, interior_obstacles
 
-    # ===== GENERATE RANDOM OBSTACLES =====
-    # Create random interior obstacles within the boundary
-    ob_x = np.random.randint(bottom_vertex[0] + 1,
-                             top_vertex[0], obs_number).tolist()
-    ob_y = np.random.randint(bottom_vertex[1] + 1,
-                             top_vertex[1], obs_number).tolist()
-    
-    # Combine x,y coordinates for boundary walls in order
-    x = ax + bx + cx + dx
-    y = ay + by + cy + dy
-    
-    # Create obstacle list from random coordinates
-    obstacle = np.vstack((ob_x, ob_y)).T.tolist()
-    
-    # Remove start and goal from obstacles (ensure they're not blocked)
-    obstacle = [coor for coor in obstacle if coor != start and coor != goal]
-    
-    # Combine boundary and obstacles into single array
-    obs_array = np.array(obstacle)
-    bound = np.vstack((x, y)).T
-    bound_obs = np.vstack((bound, obs_array))
-    
-    return bound_obs, obstacle
 
-
-def find_neighbor(node, ob, closed):
+def get_valid_neighbors(current_point, obstacles, explored_positions):
     """
-    Find all valid neighboring cells around a node.
+    Find all reachable neighboring positions from current point.
     
-    Implements 8-connected movement (up, down, left, right, and 4 diagonals)
-    with corner-cutting prevention (can't move diagonally through obstacles).
+    Implements:
+    - 8-connected grid movement (like chess king)
+    - Corner-cutting prevention (can't squeeze diagonally through obstacles)
+    - Exclusion of already-explored positions
     
     Args:
-        node: Current node to find neighbors for
-        ob: numpy array of obstacle coordinates
-        closed: list of already-explored coordinates
+        current_point: SearchPoint to find neighbors for
+        obstacles: Numpy array of obstacle coordinates
+        explored_positions: List of already-visited coordinates
     
     Returns:
         List of valid neighbor coordinates
     """
     
-    # Convert obstacles to set for O(1) lookup
-    ob_set = set(map(tuple, ob.tolist()))  
-    neighbor_set = set()
-
-    # ===== GENERATE ALL 8 NEIGHBORS =====
-    # Check 3x3 grid around current node (excluding node itself)
-    for x in range(node.coordinate[0] - 1, node.coordinate[0] + 2):
-        for y in range(node.coordinate[1] - 1, node.coordinate[1] + 2):
-            coord = (x, y)
-            # Add if not an obstacle and not the current node
-            if coord not in ob_set and coord != tuple(node.coordinate):
-                neighbor_set.add(coord)
-
-    # ===== DEFINE CARDINAL AND DIAGONAL NEIGHBORS =====
-    # Cardinal directions (up, down, left, right)
-    top_nei = (node.coordinate[0], node.coordinate[1] + 1)
-    bottom_nei = (node.coordinate[0], node.coordinate[1] - 1)
-    left_nei = (node.coordinate[0] - 1, node.coordinate[1])
-    right_nei = (node.coordinate[0] + 1, node.coordinate[1])
+    # Convert to set for O(1) lookup performance
+    obstacle_set = set(map(tuple, obstacles.tolist()))
+    valid_neighbors = set()
     
-    # Diagonal directions
-    lt_nei = (node.coordinate[0] - 1, node.coordinate[1] + 1)  # left-top
-    rt_nei = (node.coordinate[0] + 1, node.coordinate[1] + 1)  # right-top
-    lb_nei = (node.coordinate[0] - 1, node.coordinate[1] - 1)  # left-bottom
-    rb_nei = (node.coordinate[0] + 1, node.coordinate[1] - 1)  # right-bottom
-
-    # ===== PREVENT CORNER CUTTING =====
-    # Can't move diagonally if both adjacent cardinal cells are blocked
-    # This prevents "squeezing" through diagonal gaps
+    # ===== GENERATE 3x3 NEIGHBORHOOD =====
+    # Check all cells in 3x3 grid around current position
+    for x_offset in range(-1, 2):
+        for y_offset in range(-1, 2):
+            neighbor_x = current_point.position[0] + x_offset
+            neighbor_y = current_point.position[1] + y_offset
+            neighbor_pos = (neighbor_x, neighbor_y)
+            
+            # Add if not obstacle and not current position
+            if neighbor_pos not in obstacle_set and neighbor_pos != tuple(current_point.position):
+                valid_neighbors.add(neighbor_pos)
     
-    # Can't go top-left if both top and left are blocked
-    if top_nei in ob_set and left_nei in ob_set:
-        neighbor_set.discard(lt_nei)
+    # ===== DEFINE ADJACENT CELLS FOR CORNER-CUTTING CHECK =====
+    north = (current_point.position[0], current_point.position[1] + 1)
+    south = (current_point.position[0], current_point.position[1] - 1)
+    west = (current_point.position[0] - 1, current_point.position[1])
+    east = (current_point.position[0] + 1, current_point.position[1])
     
-    # Can't go top-right if both top and right are blocked
-    if top_nei in ob_set and right_nei in ob_set:
-        neighbor_set.discard(rt_nei)
+    northwest = (current_point.position[0] - 1, current_point.position[1] + 1)
+    northeast = (current_point.position[0] + 1, current_point.position[1] + 1)
+    southwest = (current_point.position[0] - 1, current_point.position[1] - 1)
+    southeast = (current_point.position[0] + 1, current_point.position[1] - 1)
     
-    # Can't go bottom-left if both bottom and left are blocked
-    if bottom_nei in ob_set and left_nei in ob_set:
-        neighbor_set.discard(lb_nei)
+    # ===== PREVENT DIAGONAL CORNER-CUTTING =====
+    # Block diagonal movement if both adjacent cardinals are obstacles
     
-    # Can't go bottom-right if both bottom and right are blocked
-    if bottom_nei in ob_set and right_nei in ob_set:
-        neighbor_set.discard(rb_nei)
+    if north in obstacle_set and west in obstacle_set:
+        valid_neighbors.discard(northwest)
+    
+    if north in obstacle_set and east in obstacle_set:
+        valid_neighbors.discard(northeast)
+    
+    if south in obstacle_set and west in obstacle_set:
+        valid_neighbors.discard(southwest)
+    
+    if south in obstacle_set and east in obstacle_set:
+        valid_neighbors.discard(southeast)
+    
+    # ===== REMOVE ALREADY-EXPLORED POSITIONS =====
+    explored_set = set(map(tuple, explored_positions))
+    valid_neighbors -= explored_set
+    
+    return list(valid_neighbors)
 
-    # ===== REMOVE ALREADY-EXPLORED NEIGHBORS =====
-    # Don't revisit nodes already in closed list
-    closed_set = set(map(tuple, closed))
-    neighbor_set -= closed_set
 
-    return list(neighbor_set)
-
-
-def find_node_index(coordinate, node_list):
+def locate_point_index(target_position, point_list):
     """
-    Find the index of a node in a list by its coordinate.
+    Find index of a SearchPoint in list by its position coordinates.
     
     Args:
-        coordinate: [x, y] coordinate to search for
-        node_list: List of Node objects
+        target_position: [x, y] coordinates to search for
+        point_list: List of SearchPoint objects
     
     Returns:
-        Index of the node with matching coordinate
+        Index of matching point in list
     """
-    ind = 0
-    for node in node_list:
-        if node.coordinate == coordinate:
-            target_node = node
-            ind = node_list.index(target_node)
-            break
-    return ind
+    for index, point in enumerate(point_list):
+        if point.position == target_position:
+            return index
+    return 0
 
 
-def find_path(open_list, closed_list, goal, obstacle):
+def expand_search_frontier(frontier, explored, target, obstacles):
     """
-    Core A* search step: expand all nodes in current open list.
+    Expand one generation of the search frontier.
     
-    This processes one "generation" of nodes - all nodes currently in the
-    open list get expanded, their neighbors evaluated, and costs updated.
+    Process:
+    1. For each point in current frontier
+    2. Find valid neighbors
+    3. Update costs or add new points
+    4. Move current point to explored set
+    5. Sort frontier by f-value
     
     Args:
-        open_list: List of nodes to be explored (frontier)
-        closed_list: List of already-explored nodes
-        goal: Target coordinate for this search direction
-        obstacle: Array of obstacle coordinates
+        frontier: List of SearchPoints to explore
+        explored: List of already-explored SearchPoints
+        target: Target position for this search direction
+        obstacles: Array of obstacle coordinates
     
     Returns:
-        Updated open_list and closed_list after expansion
+        Updated frontier and explored lists
     """
     
-    # Process all nodes currently in open list
-    flag = len(open_list)
-    for i in range(flag):
-        # Always process the best node (lowest F value) first
-        node = open_list[0]
+    frontier_size = len(frontier)
+    
+    for iteration in range(frontier_size):
+        # Always process best point (lowest f-value)
+        current_point = frontier[0]
         
-        # Extract coordinates for faster lookup
-        open_coordinate_list = [node.coordinate for node in open_list]
-        closed_coordinate_list = [node.coordinate for node in closed_list]
+        # Extract positions for efficient lookup
+        frontier_positions = [pt.position for pt in frontier]
+        explored_positions = [pt.position for pt in explored]
         
-        # ===== FIND AND PROCESS NEIGHBORS =====
-        temp = find_neighbor(node, obstacle, closed_coordinate_list)
+        # ===== FIND NEIGHBORS OF CURRENT POINT =====
+        neighbors = get_valid_neighbors(current_point, obstacles, explored_positions)
         
-        for element in temp:
+        for neighbor_pos in neighbors:
             # Skip if already fully explored
-            if element in closed_list:
+            if neighbor_pos in explored_positions:
                 continue
             
-            # ===== NEIGHBOR ALREADY IN OPEN LIST =====
-            elif element in open_coordinate_list:
-                # Node discovered before - check if we found a cheaper path
-                ind = open_coordinate_list.index(element)
-                new_g = gcost(node, element)
+            # ===== NEIGHBOR ALREADY IN FRONTIER =====
+            if neighbor_pos in frontier_positions:
+                # Check if we found a cheaper path
+                neighbor_index = frontier_positions.index(neighbor_pos)
+                new_cost = calculate_movement_cost(current_point, neighbor_pos)
                 
-                # If this path is cheaper, update the node
-                if new_g <= open_list[ind].G:
-                    open_list[ind].G = new_g
-                    open_list[ind].reset_f()  # Recalculate F = G + H
-                    open_list[ind].parent = node  # Update parent for path reconstruction
+                if new_cost <= frontier[neighbor_index].actual_cost:
+                    # Update with better path
+                    frontier[neighbor_index].actual_cost = new_cost
+                    frontier[neighbor_index].recalculate_score()
+                    frontier[neighbor_index].predecessor = current_point
             
-            # ===== NEW NEIGHBOR - CREATE NODE =====
+            # ===== NEW NEIGHBOR - CREATE SEARCH POINT =====
             else:
-                # First time seeing this coordinate, create new node
-                ele_node = Node(coordinate=element, 
-                              parent=node,
-                              G=gcost(node, element), 
-                              H=hcost(element, goal))
-                open_list.append(ele_node)
+                new_point = SearchPoint(
+                    position=neighbor_pos,
+                    predecessor=current_point,
+                    actual_cost=calculate_movement_cost(current_point, neighbor_pos),
+                    estimated_cost=manhattan_distance(neighbor_pos, target)
+                )
+                frontier.append(new_point)
         
-        # ===== MOVE CURRENT NODE TO CLOSED LIST =====
-        # Done exploring this node
-        open_list.remove(node)
-        closed_list.append(node)
+        # ===== MOVE CURRENT TO EXPLORED =====
+        frontier.remove(current_point)
+        explored.append(current_point)
         
-        # ===== SORT OPEN LIST BY F VALUE =====
-        # Keep best candidates (lowest F) at front for next iteration
-        open_list.sort(key=lambda x: x.F)
+        # ===== MAINTAIN PRIORITY QUEUE =====
+        # Sort by f-value to keep best candidates at front
+        frontier.sort(key=lambda pt: pt.total_score)
     
-    return open_list, closed_list
+    return frontier, explored
 
 
-def node_to_coordinate(node_list):
+def extract_positions(point_list):
     """
-    Extract just the coordinates from a list of Node objects.
+    Convert list of SearchPoint objects to list of coordinates.
     
     Args:
-        node_list: List of Node objects
+        point_list: List of SearchPoint objects
     
     Returns:
-        List of [x, y] coordinates
+        List of [x, y] position arrays
     """
-    coordinate_list = [node.coordinate for node in node_list]
-    return coordinate_list
+    return [point.position for point in point_list]
 
 
-def check_node_coincide(close_ls1, closed_ls2):
+def detect_frontier_collision(explored_forward, explored_backward):
     """
-    Check if the two search frontiers have met.
+    Check if forward and backward searches have met.
     
-    This is the key to bidirectional search - when a node appears in both
-    closed lists, the searches have met and a path exists.
+    This is the critical test for bidirectional search completion.
+    When any position appears in both explored sets, a path exists.
     
     Args:
-        close_ls1: Closed list from start→goal search
-        closed_ls2: Closed list from goal→start search
+        explored_forward: Explored points from start→goal
+        explored_backward: Explored points from goal→start
     
     Returns:
-        List of coordinates where the searches intersect (meeting points)
+        List of meeting point coordinates (intersection)
     """
-    # Convert node lists to coordinate lists
-    cl1 = node_to_coordinate(close_ls1)
-    cl2 = node_to_coordinate(closed_ls2)
+    forward_positions = extract_positions(explored_forward)
+    backward_positions = extract_positions(explored_backward)
     
-    # Find coordinates that appear in both lists
-    intersect_ls = [node for node in cl1 if node in cl2]
-    return intersect_ls
+    # Find positions that appear in both sets
+    meeting_points = [pos for pos in forward_positions if pos in backward_positions]
+    return meeting_points
 
 
-def find_surrounding(coordinate, obstacle):
+def identify_adjacent_obstacles(center_position, obstacle_list):
     """
-    Find all obstacles in the 3x3 grid around a coordinate.
+    Find all obstacles surrounding a position (3x3 neighborhood).
     
-    Used to draw the "border line" when a search gets completely blocked,
-    showing which obstacles are confining the start or goal.
+    Used for visualizing the "blocking boundary" when search fails.
     
     Args:
-        coordinate: [x, y] center position
-        obstacle: List of obstacle coordinates
+        center_position: [x, y] center coordinate
+        obstacle_list: List of obstacle coordinates
     
     Returns:
-        List of obstacle coordinates adjacent to the input coordinate
+        List of obstacles adjacent to center
     """
-    boundary: list = []
-    # Check 3x3 grid around coordinate
-    for x in range(coordinate[0] - 1, coordinate[0] + 2):
-        for y in range(coordinate[1] - 1, coordinate[1] + 2):
-            if [x, y] in obstacle:
-                boundary.append([x, y])
-    return boundary
+    adjacent = []
+    for x_offset in range(-1, 2):
+        for y_offset in range(-1, 2):
+            check_pos = [center_position[0] + x_offset, 
+                        center_position[1] + y_offset]
+            if check_pos in obstacle_list:
+                adjacent.append(check_pos)
+    return adjacent
 
 
-def get_border_line(node_closed_ls, obstacle):
+def compute_boundary_obstacles(explored_points, all_obstacles):
     """
-    Find all obstacles on the boundary of explored region.
+    Find obstacles forming the boundary of explored region.
     
-    When a search is completely blocked, this identifies the "wall" of
-    obstacles that prevented further expansion.
+    When a search is blocked, this identifies which obstacles
+    prevented further expansion.
     
     Args:
-        node_closed_ls: List of explored nodes
-        obstacle: List of all obstacles
+        explored_points: List of explored SearchPoints
+        all_obstacles: List of all obstacle coordinates
     
     Returns:
-        numpy array of obstacle coordinates forming the boundary
+        Numpy array of boundary obstacle coordinates
     """
-    border: list = []
-    coordinate_closed_ls = node_to_coordinate(node_closed_ls)
+    boundary_obstacles = []
+    explored_positions = extract_positions(explored_points)
     
-    # For each explored node, find surrounding obstacles
-    for coordinate in coordinate_closed_ls:
-        temp = find_surrounding(coordinate, obstacle)
-        border = border + temp
+    # For each explored position, find adjacent obstacles
+    for position in explored_positions:
+        adjacent = identify_adjacent_obstacles(position, all_obstacles)
+        boundary_obstacles.extend(adjacent)
     
-    border_ary = np.array(border)
-    return border_ary
+    return np.array(boundary_obstacles)
 
 
-def get_path(org_list, goal_list, coordinate):
+def reconstruct_complete_path(forward_explored, backward_explored, meeting_position):
     """
-    Reconstruct the complete path from start to goal.
+    Build complete path by joining forward and backward segments.
     
-    Traces back from the meeting point to both start and goal,
-    then combines them into the full path.
+    Process:
+    1. Trace from meeting point back to start (forward search)
+    2. Trace from meeting point back to goal (backward search)
+    3. Reverse forward segment
+    4. Concatenate: start→meeting + meeting→goal
     
     Args:
-        org_list: Closed list from start→goal search
-        goal_list: Closed list from goal→start search
-        coordinate: Meeting point where both searches intersected
+        forward_explored: Explored list from start search
+        backward_explored: Explored list from goal search
+        meeting_position: Coordinate where searches met
     
     Returns:
-        numpy array of coordinates forming the complete path
+        Numpy array of complete path coordinates
     """
-    path_org: list = []
-    path_goal: list = []
+    forward_segment = []
+    backward_segment = []
     
-    # ===== TRACE PATH FROM MEETING POINT TO START =====
-    # Find the meeting node in origin search
-    ind = find_node_index(coordinate, org_list)
-    node = org_list[ind]
+    # ===== TRACE FORWARD PATH (MEETING → START) =====
+    meeting_index = locate_point_index(meeting_position, forward_explored)
+    current = forward_explored[meeting_index]
     
-    # Follow parent pointers back to start
-    while node != org_list[0]:
-        path_org.append(node.coordinate)
-        node = node.parent
-    path_org.append(org_list[0].coordinate)  # Add start coordinate
+    while current != forward_explored[0]:
+        forward_segment.append(current.position)
+        current = current.predecessor
+    forward_segment.append(forward_explored[0].position)
     
-    # ===== TRACE PATH FROM MEETING POINT TO GOAL =====
-    # Find the meeting node in goal search
-    ind = find_node_index(coordinate, goal_list)
-    node = goal_list[ind]
+    # ===== TRACE BACKWARD PATH (MEETING → GOAL) =====
+    meeting_index = locate_point_index(meeting_position, backward_explored)
+    current = backward_explored[meeting_index]
     
-    # Follow parent pointers back to goal
-    while node != goal_list[0]:
-        path_goal.append(node.coordinate)
-        node = node.parent
-    path_goal.append(goal_list[0].coordinate)  # Add goal coordinate
+    while current != backward_explored[0]:
+        backward_segment.append(current.position)
+        current = current.predecessor
+    backward_segment.append(backward_explored[0].position)
     
-    # ===== COMBINE PATHS =====
-    # Reverse origin path so it goes start→meeting
-    path_org.reverse()
-    # Concatenate: start→meeting + meeting→goal
-    path = path_org + path_goal
-    path = np.array(path)
-    return path
+    # ===== COMBINE SEGMENTS =====
+    forward_segment.reverse()  # Now goes start→meeting
+    complete_path = forward_segment + backward_segment
+    return np.array(complete_path)
 
 
-def random_coordinate(bottom_vertex, top_vertex):
+def generate_random_position(lower_bound, upper_bound):
     """
-    Generate a random coordinate within the boundary.
+    Generate random coordinate within specified bounds.
     
     Args:
-        bottom_vertex: [x, y] bottom-left corner
-        top_vertex: [x, y] top-right corner
+        lower_bound: [x, y] minimum coordinates
+        upper_bound: [x, y] maximum coordinates
     
     Returns:
-        Random [x, y] coordinate inside the boundary
+        Random [x, y] coordinate in valid range
     """
-    coordinate = [np.random.randint(bottom_vertex[0] + 1, top_vertex[0]),
-                  np.random.randint(bottom_vertex[1] + 1, top_vertex[1])]
-    return coordinate
+    random_x = np.random.randint(lower_bound[0] + 1, upper_bound[0])
+    random_y = np.random.randint(lower_bound[1] + 1, upper_bound[1])
+    return [random_x, random_y]
 
 
-def draw(close_origin, close_goal, start, end, bound):
+def render_search_state(forward_explored, backward_explored, start, goal, obstacles):
     """
-    Visualize the current search state.
+    Visualize current state of bidirectional search.
     
-    Shows:
-    - Yellow circles: Nodes explored from start
-    - Green circles: Nodes explored from goal
+    Color scheme:
+    - Yellow circles: Forward search (start→goal)
+    - Green circles: Backward search (goal→start)
     - Black squares: Obstacles
-    - Blue markers: Start (^) and Goal (*)
+    - Blue triangle: Start position
+    - Blue star: Goal position
     
     Args:
-        close_origin: Array of coordinates explored from start
-        close_goal: Array of coordinates explored from goal
-        start: Starting coordinate
-        end: Goal coordinate
-        bound: Array of obstacle coordinates
+        forward_explored: Array of forward-searched coordinates
+        backward_explored: Array of backward-searched coordinates
+        start: Start position
+        goal: Goal position
+        obstacles: Obstacle coordinate array
     """
     
-    # Handle edge case where goal search hasn't started yet
-    if not close_goal.tolist():
-        # If origin is blocked immediately, goal search never runs
-        # Add goal coordinate to array for plotting purposes
-        close_goal = np.array([end])
+    # Handle edge case: backward search not yet started
+    if not backward_explored.tolist():
+        backward_explored = np.array([goal])
     
-    # Clear previous plot and set figure size
+    # Clear and setup figure
     plt.cla()
     plt.gcf().set_size_inches(11, 9, forward=True)
-    plt.axis('equal')  # Equal aspect ratio
+    plt.axis('equal')
     
-    # Plot explored nodes
-    plt.plot(close_origin[:, 0], close_origin[:, 1], 'oy', markersize=3)  # Yellow: from start
-    plt.plot(close_goal[:, 0], close_goal[:, 1], 'og', markersize=3)      # Green: from goal
+    # Render exploration frontiers
+    plt.plot(forward_explored[:, 0], forward_explored[:, 1], 
+            'oy', markersize=3, label='Forward Search')
+    plt.plot(backward_explored[:, 0], backward_explored[:, 1], 
+            'og', markersize=3, label='Backward Search')
     
-    # Plot obstacles and boundary
-    plt.plot(bound[:, 0], bound[:, 1], 'sk', markersize=2)  # Black squares
+    # Render obstacles
+    plt.plot(obstacles[:, 0], obstacles[:, 1], 
+            'sk', markersize=2, label='Obstacles')
     
-    # Plot start and goal markers
-    plt.plot(end[0], end[1], '*b', markersize=10, label='Goal')      # Blue star
-    plt.plot(start[0], start[1], '^b', markersize=10, label='Origin')  # Blue triangle
+    # Render start and goal markers
+    plt.plot(goal[0], goal[1], '*b', markersize=10, label='Goal')
+    plt.plot(start[0], start[1], '^b', markersize=10, label='Start')
     
     plt.legend()
-    plt.title('Bidirectional A* Search (Press ESC to exit)')
-    plt.pause(animation_delay)  # Pause based on animation_delay setting
+    plt.title('Bidirectional A* Search (ESC to exit)')
+    plt.pause(FRAME_DELAY)
 
 
-def draw_control(org_closed, goal_closed, flag, start, end, bound, obstacle):
+def visualization_controller(forward_explored, backward_explored, 
+                            search_status, start, goal, obstacles, obstacle_list):
     """
-    Control the visualization and evaluate search completion.
+    Central controller for visualization and completion detection.
     
-    This is the main visualization controller that:
-    1. Draws the current search state
-    2. Checks if searches have met (path found)
-    3. Handles blocked conditions and draws border lines
+    Responsibilities:
+    1. Render current search state
+    2. Check if searches have met
+    3. Handle blocked search conditions
+    4. Draw completion or failure states
     
     Args:
-        org_closed: Closed list from start search
-        goal_closed: Closed list from goal search
-        flag: Status flag (0=searching, 1=start blocked, 2=goal blocked)
+        forward_explored: Forward search explored list
+        backward_explored: Backward search explored list
+        search_status: 0=active, 1=start blocked, 2=goal blocked
         start: Start coordinate
-        end: Goal coordinate
-        bound: Obstacle array
-        obstacle: Obstacle list
+        goal: Goal coordinate
+        obstacles: Obstacle array
+        obstacle_list: Obstacle list (for boundary detection)
     
     Returns:
-        stop_loop: 1 if search should stop, 0 to continue
-        path: numpy array of path coordinates (None if no path)
+        termination_flag: 1 to stop search, 0 to continue
+        path: Complete path array or None
     """
     
-    stop_loop = 0  # Flag to stop the search loop
+    termination_flag = 0
     
-    # Convert node lists to coordinate arrays for plotting
-    org_closed_ls = node_to_coordinate(org_closed)
-    org_array = np.array(org_closed_ls)
-    goal_closed_ls = node_to_coordinate(goal_closed)
-    goal_array = np.array(goal_closed_ls)
-    path = None
+    # Convert to coordinate arrays for visualization
+    forward_coords = np.array(extract_positions(forward_explored))
+    backward_coords = np.array(extract_positions(backward_explored))
+    found_path = None
     
-    # Draw current search state
-    if show_animation:
-        draw(org_array, goal_array, start, end, bound)
+    # Render current state
+    if SHOW_SEARCH_ANIMATION:
+        render_search_state(forward_coords, backward_coords, start, goal, obstacles)
     
     # ===== CHECK SEARCH STATUS =====
     
-    if flag == 0:  # Normal searching - check if paths have met
-        node_intersect = check_node_coincide(org_closed, goal_closed)
+    if search_status == 0:  # Normal search - check for meeting
+        meeting_points = detect_frontier_collision(forward_explored, backward_explored)
         
-        if node_intersect:  # Searches have met - path found!
-            path = get_path(org_closed, goal_closed, node_intersect[0])
-            stop_loop = 1
-            print('Path found!')
+        if meeting_points:  # SUCCESS - Searches met!
+            found_path = reconstruct_complete_path(
+                forward_explored, backward_explored, meeting_points[0]
+            )
+            termination_flag = 1
+            print('[SUCCESS] Path discovered!')
             
-            if show_animation:  # Draw the complete path
-                plt.plot(path[:, 0], path[:, 1], '-r')  # Red line
-                plt.title('Robot Arrived', size=20, loc='center')
+            if SHOW_SEARCH_ANIMATION:
+                plt.plot(found_path[:, 0], found_path[:, 1], '-r', linewidth=2)
+                plt.title('Path Found - Search Complete', size=20)
                 plt.pause(0.01)
                 plt.show()
     
-    elif flag == 1:  # Start point is completely blocked
-        stop_loop = 1
-        print('There is no path to the goal! Start point is blocked!')
+    elif search_status == 1:  # Start position blocked
+        termination_flag = 1
+        print('[FAILURE] Start position is completely blocked!')
     
-    elif flag == 2:  # Goal point is completely blocked
-        stop_loop = 1
-        print('There is no path to the goal! End point is blocked!')
+    elif search_status == 2:  # Goal position blocked
+        termination_flag = 1
+        print('[FAILURE] Goal position is completely blocked!')
     
-    # ===== DRAW BORDER LINES FOR BLOCKED CASES =====
-    if show_animation:
-        info = 'There is no path to the goal!' \
-               ' Robot&Goal are split by border' \
-               ' shown in red \'x\'!'
-        
-        if flag == 1:  # Show obstacles blocking start
-            border = get_border_line(org_closed, obstacle)
-            plt.plot(border[:, 0], border[:, 1], 'xr')  # Red X markers
-            plt.title(info, size=14, loc='center')
+    # ===== VISUALIZE BLOCKING BOUNDARIES =====
+    if SHOW_SEARCH_ANIMATION:
+        if search_status == 1:  # Show start blocking boundary
+            boundary = compute_boundary_obstacles(forward_explored, obstacle_list)
+            plt.plot(boundary[:, 0], boundary[:, 1], 'xr', markersize=8)
+            plt.title('Start Blocked - No Path Exists', size=14)
             plt.pause(0.01)
             plt.show()
         
-        elif flag == 2:  # Show obstacles blocking goal
-            border = get_border_line(goal_closed, obstacle)
-            plt.plot(border[:, 0], border[:, 1], 'xr')  # Red X markers
-            plt.title(info, size=14, loc='center')
+        elif search_status == 2:  # Show goal blocking boundary
+            boundary = compute_boundary_obstacles(backward_explored, obstacle_list)
+            plt.plot(boundary[:, 0], boundary[:, 1], 'xr', markersize=8)
+            plt.title('Goal Blocked - No Path Exists', size=14)
             plt.pause(0.01)
             plt.show()
     
-    return stop_loop, path
+    return termination_flag, found_path
 
 
-def searching_control(start, end, bound, obstacle):
+def execute_bidirectional_search(start, goal, all_obstacles, interior_obstacles):
     """
-    Main bidirectional search controller.
+    Main bidirectional A* search orchestrator.
     
-    Manages the alternating search process:
-    1. Search from start toward goal's best node
-    2. Search from goal toward start's best node
-    3. Check if searches have met
-    4. Repeat until path found or one side is blocked
+    Algorithm:
+    1. Initialize searches from both start and goal
+    2. Alternate between expanding forward and backward
+    3. Each search targets best node from opposite search
+    4. Continue until searches meet or one is blocked
     
     Args:
-        start: Starting coordinate [x, y]
-        end: Goal coordinate [x, y]
-        bound: Array of all obstacles (boundary + random)
-        obstacle: List of random obstacles only
+        start: Starting position [x, y]
+        goal: Goal position [x, y]
+        all_obstacles: Complete obstacle array
+        interior_obstacles: Interior obstacle list
     
     Returns:
-        path: numpy array of path coordinates (None if no path exists)
+        Complete path array or None if no path exists
     """
     
-    # ===== INITIALIZE NODES =====
-    # Create starting nodes for both directions
-    origin = Node(coordinate=start, H=hcost(start, end))
-    goal = Node(coordinate=end, H=hcost(end, start))
+    # ===== INITIALIZE SEARCH ROOTS =====
+    forward_root = SearchPoint(
+        position=start,
+        estimated_cost=manhattan_distance(start, goal)
+    )
     
-    # ===== INITIALIZE SEARCH LISTS =====
-    # Lists for searching from origin to goal
-    origin_open: list = [origin]  # Nodes to explore
-    origin_close: list = []       # Nodes already explored
+    backward_root = SearchPoint(
+        position=goal,
+        estimated_cost=manhattan_distance(goal, start)
+    )
     
-    # Lists for searching from goal to origin
-    goal_open = [goal]           # Nodes to explore
-    goal_close: list = []        # Nodes already explored
+    # ===== INITIALIZE SEARCH STRUCTURES =====
+    forward_frontier = [forward_root]
+    forward_explored = []
     
-    # ===== INITIALIZE SEARCH TARGETS =====
-    target_goal = end  # Initial target for origin search
+    backward_frontier = [backward_root]
+    backward_explored = []
     
-    # Status flag: 0=searching, 1=start blocked, 2=goal blocked
-    flag = 0
-    path = None
+    # Initial targets
+    forward_target = goal
     
-    # Counter for batch visualization updates
-    iteration_count = 0
+    # Search status: 0=active, 1=start blocked, 2=goal blocked
+    status = 0
+    result_path = None
     
-    # ===== MAIN BIDIRECTIONAL SEARCH LOOP =====
+    iteration_counter = 0
+    
+    # ===== MAIN BIDIRECTIONAL LOOP =====
     while True:
-        # Check for clean exit request
-        global should_exit
-        if should_exit:
-            print("Search interrupted by user")
+        # Check for user abort
+        global CONTINUE_EXECUTION
+        if not CONTINUE_EXECUTION:
+            print("[ABORT] Search terminated by user")
             return None
         
-        # ===== SEARCH FROM START TOWARD GOAL =====
-        origin_open, origin_close = \
-            find_path(origin_open, origin_close, target_goal, bound)
+        # ===== EXPAND FORWARD SEARCH =====
+        forward_frontier, forward_explored = expand_search_frontier(
+            forward_frontier, forward_explored, forward_target, all_obstacles
+        )
         
-        # Check if start search is blocked (open list empty = nowhere to expand)
-        if not origin_open:
-            flag = 1  # Origin node is blocked
-            draw_control(origin_close, goal_close, flag, start, end, bound,
-                         obstacle)
+        if not forward_frontier:  # Forward search blocked
+            status = 1
+            visualization_controller(forward_explored, backward_explored, 
+                                   status, start, goal, all_obstacles, interior_obstacles)
             break
         
-        # ===== UPDATE TARGET FOR GOAL SEARCH =====
-        # Goal search should aim for the best node found by origin search
-        target_origin = min(origin_open, key=lambda x: x.F).coordinate
-
-        # ===== SEARCH FROM GOAL TOWARD START =====
-        goal_open, goal_close = \
-            find_path(goal_open, goal_close, target_origin, bound)
+        # Update target for backward search
+        backward_target = min(forward_frontier, key=lambda pt: pt.total_score).position
         
-        # Check if goal search is blocked
-        if not goal_open:
-            flag = 2  # Goal is blocked
-            draw_control(origin_close, goal_close, flag, start, end, bound,
-                         obstacle)
+        # ===== EXPAND BACKWARD SEARCH =====
+        backward_frontier, backward_explored = expand_search_frontier(
+            backward_frontier, backward_explored, backward_target, all_obstacles
+        )
+        
+        if not backward_frontier:  # Backward search blocked
+            status = 2
+            visualization_controller(forward_explored, backward_explored,
+                                   status, start, goal, all_obstacles, interior_obstacles)
             break
         
-        # ===== UPDATE TARGET FOR ORIGIN SEARCH =====
-        # Origin search should aim for the best node found by goal search
-        target_goal = min(goal_open, key=lambda x: x.F).coordinate
-
-        # ===== CHECK IF SEARCHES HAVE MET =====
-        # Update visualization every 5 iterations instead of every 10
-        # (More frequent updates = slower, more visible animation)
-        iteration_count += 1
-        if iteration_count % 5 == 0:
-            stop_sign, path = draw_control(origin_close, goal_close, flag, start,
-                                           end, bound, obstacle)
-            if stop_sign:
+        # Update target for forward search
+        forward_target = min(backward_frontier, key=lambda pt: pt.total_score).position
+        
+        # ===== CHECK FOR MEETING (Every 5 iterations) =====
+        iteration_counter += 1
+        if iteration_counter % 5 == 0:
+            stop_flag, result_path = visualization_controller(
+                forward_explored, backward_explored, status, 
+                start, goal, all_obstacles, interior_obstacles
+            )
+            if stop_flag:
                 break
         else:
-            # Check for path without drawing (faster)
-            node_intersect = check_node_coincide(origin_close, goal_close)
-            if node_intersect:
-                path = get_path(origin_close, goal_close, node_intersect[0])
-                # Draw final result
-                draw_control(origin_close, goal_close, flag, start, end, bound, obstacle)
+            # Quick check without visualization
+            meeting_points = detect_frontier_collision(forward_explored, backward_explored)
+            if meeting_points:
+                result_path = reconstruct_complete_path(
+                    forward_explored, backward_explored, meeting_points[0]
+                )
+                visualization_controller(forward_explored, backward_explored,
+                                       status, start, goal, all_obstacles, interior_obstacles)
                 break
     
-    return path
+    return result_path
 
 
-def main(obstacle_number=800):
+def run_pathfinding_demonstration(obstacle_density=800):
     """
-    Main entry point for bidirectional A* demonstration.
+    Entry point for bidirectional A* demonstration.
     
-    Creates a random environment with obstacles and searches for a path
-    from a random start to a random goal using bidirectional A*.
+    Creates a test environment with:
+    - Rectangular boundary walls
+    - Random interior obstacles
+    - Start at bottom-left corner
+    - Goal at top-right corner
+    - Maximum diagonal challenge
     
     Args:
-        obstacle_number: Number of random obstacles to generate (default: 800)
-                        In a 60x60 grid, 800 obstacles = ~22% density
+        obstacle_density: Number of random obstacles (default: 800 ≈ 22% density)
     """
-    print(__file__ + ' start!')
-
-    # Define boundary of the search space
-    top_vertex = [60, 60]    # Top-right corner
-    bottom_vertex = [0, 0]   # Bottom-left corner
-
-    # ===== SET START AND GOAL AT DIAGONAL EXTREMES =====
-    # Place at opposite corners for maximum path length challenge
-    start = [bottom_vertex[0] + 1, bottom_vertex[1] + 1]  # Bottom-left: (1, 1)
-    end = [top_vertex[0] - 1, top_vertex[1] - 1]          # Top-right: (59, 59)
+    print("=" * 70)
+    print("BIDIRECTIONAL A* PATHFINDING DEMONSTRATION")
+    print("=" * 70)
     
-    print(f"Start position: {start}")
-    print(f"Goal position: {end}")
-    print(f"Diagonal distance: ~{math.hypot(end[0]-start[0], end[1]-start[1]):.1f} units")
-
-    # ===== GENERATE ENVIRONMENT =====
-    # Create boundary walls and random obstacles
-    bound, obstacle = boundary_and_obstacles(start, end, top_vertex,
-                                             bottom_vertex,
-                                             obstacle_number)
-
-    # Setup figure and connect keyboard handler
-    if show_animation:
-        fig = plt.figure(figsize=(11, 9))
-        fig.canvas.mpl_connect('key_press_event', on_key_press)
-
-    # ===== RUN BIDIRECTIONAL A* SEARCH =====
-    print("\nStarting bidirectional A* search... (Press ESC to exit)")
-    path = searching_control(start, end, bound, obstacle)
+    # Define search space
+    upper_boundary = [60, 60]
+    lower_boundary = [0, 0]
     
-    # If animation is off, print the path array
-    if not show_animation and path is not None:
-        print(path)
+    # Position start and goal at diagonal extremes
+    start_position = [lower_boundary[0] + 1, lower_boundary[1] + 1]  # (1, 1)
+    goal_position = [upper_boundary[0] - 1, upper_boundary[1] - 1]    # (59, 59)
     
-    # Calculate and display path statistics
-    if path is not None and len(path) > 0:
-        path_length = sum([math.hypot(path[i+1][0]-path[i][0], 
-                                     path[i+1][1]-path[i][1]) 
-                          for i in range(len(path)-1)])
-        print(f"\nPath found! Total path length: {path_length:.2f} units")
-        print("Press ESC to close window, or close manually.")
+    print(f"\n[CONFIG] Start: {start_position}")
+    print(f"[CONFIG] Goal: {goal_position}")
+    print(f"[CONFIG] Direct distance: "
+          f"{math.hypot(goal_position[0]-start_position[0], goal_position[1]-start_position[1]):.1f}m")
+    print(f"[CONFIG] Obstacles: {obstacle_density} (~22% density)")
+    
+    # Generate environment
+    all_obstacles, interior_obstacles = create_environment(
+        start_position, goal_position, 
+        upper_boundary, lower_boundary, 
+        obstacle_density
+    )
+    
+    # Setup visualization
+    if SHOW_SEARCH_ANIMATION:
+        figure = plt.figure(figsize=(11, 9))
+        figure.canvas.mpl_connect('key_press_event', handle_escape_key)
+    
+    # Execute search
+    print("\n[SEARCH] Launching bidirectional A*... (ESC to abort)")
+    result = execute_bidirectional_search(
+        start_position, goal_position, 
+        all_obstacles, interior_obstacles
+    )
+    
+    # Report results
+    if result is not None and len(result) > 0:
+        path_length = sum([
+            math.hypot(result[i+1][0]-result[i][0], result[i+1][1]-result[i][1])
+            for i in range(len(result)-1)
+        ])
+        print(f"\n[RESULT] Path found successfully!")
+        print(f"  → Length: {path_length:.2f} meters")
+        print(f"  → Waypoints: {len(result)}")
+        print("\n[INFO] Close window or press ESC to exit")
+    elif not SHOW_SEARCH_ANIMATION and result is not None:
+        print(result)
 
 
-# Run the program
+# ===== PROGRAM ENTRY POINT =====
 if __name__ == '__main__':
-    # Run with fewer obstacles for better path success rate
-    # 800 obstacles = ~22% density (much more navigable than 40%)
-    main(obstacle_number=800)
+    run_pathfinding_demonstration(obstacle_density=800)
